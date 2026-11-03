@@ -55,16 +55,14 @@ def version_callback(value: bool) -> None:
 
 @app.callback()
 def root(
-    show_version: Annotated[
-        bool | None,
+    version: Annotated[
+        bool,
         typer.Option(
-            None,
-            "--version",
-            callback=version_callback,
             is_eager=True,
+            callback=version_callback,
             help="Show the version and exit.",
         ),
-    ] = None,
+    ] = False,
 ) -> None:
     """Monitor internet reachability and log outages."""
 
