@@ -13,6 +13,7 @@ import time
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from http.client import HTTPException
+from importlib.metadata import version
 from pathlib import Path
 from typing import Annotated, Callable
 from urllib.error import URLError
@@ -43,6 +44,29 @@ app = typer.Typer(
 )
 app.add_typer(launchd_app, name="launchd")
 app.add_typer(service_app, name="service")
+
+
+def version_callback(value: bool) -> None:
+    """Print the installed package version and exit."""
+    if value:
+        typer.echo(f"linkwatch {version('linkwatch')}")
+        raise typer.Exit()
+
+
+@app.callback()
+def root(
+    show_version: Annotated[
+        bool | None,
+        typer.Option(
+            None,
+            "--version",
+            callback=version_callback,
+            is_eager=True,
+            help="Show the version and exit.",
+        ),
+    ] = None,
+) -> None:
+    """Monitor internet reachability and log outages."""
 
 
 @dataclass(frozen=True)
