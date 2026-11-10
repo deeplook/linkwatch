@@ -1,4 +1,5 @@
 import csv
+import re
 import signal
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -20,6 +21,11 @@ from linkwatch.monitor import (
 )
 
 runner = CliRunner()
+ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
+
+
+def _plain_output(result):
+    return ANSI_ESCAPE_RE.sub("", result.output)
 
 
 def test_default_log_uses_hidden_home_directory():
@@ -38,18 +44,20 @@ def test_cli_help_uses_linkwatch_and_lists_timing_and_log_defaults():
 def test_cli_monitor_help_lists_timing_and_log_options():
     result = runner.invoke(app, ["monitor", "--help"])
     assert result.exit_code == 0
-    assert "--interval" in result.output
-    assert "--period" in result.output
-    assert ".linkwatch" in result.output
+    output = _plain_output(result)
+    assert "--interval" in output
+    assert "--period" in output
+    assert ".linkwatch" in output
 
 
 def test_cli_chart_help_lists_log_and_output_options():
     result = runner.invoke(app, ["chart", "--help"])
     assert result.exit_code == 0
-    assert "--log" in result.output
-    assert "--output" in result.output
-    assert "--end-time" in result.output
-    assert "lifecycle" in result.output.lower()
+    output = _plain_output(result)
+    assert "--log" in output
+    assert "--output" in output
+    assert "--end-time" in output
+    assert "lifecycle" in output.lower()
 
 
 def test_cli_period_accepts_fractional_seconds_and_defaults_to_canonical_log(monkeypatch):
@@ -159,8 +167,9 @@ def test_cli_chart_mode_writes_requested_svg(tmp_path: Path):
 def test_cli_rejects_nonpositive_interval():
     result = runner.invoke(app, ["monitor", "--interval", "0"])
     assert result.exit_code != 0
-    assert "Invalid value" in result.output
-    assert "--interval" in result.output
+    output = _plain_output(result)
+    assert "Invalid value" in output
+    assert "--interval" in output
 
 def test_probe_treats_transport_failure_as_offline(monkeypatch):
     def fail(*_args, **_kwargs):

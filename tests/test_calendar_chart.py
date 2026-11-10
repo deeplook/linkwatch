@@ -1,4 +1,5 @@
 import csv
+import re
 from pathlib import Path
 from xml.etree import ElementTree as ET
 
@@ -7,6 +8,11 @@ from typer.testing import CliRunner
 from linkwatch.cli import app
 
 runner = CliRunner()
+ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
+
+
+def _plain_output(result):
+    return ANSI_ESCAPE_RE.sub("", result.output)
 
 
 def write_events(path: Path, rows: list[tuple[str, str]]) -> None:
@@ -139,10 +145,11 @@ def test_calendar_caps_unmatched_monitor_session_at_last_log_event(tmp_path: Pat
 def test_calendar_command_help_exposes_timezone_and_date_range():
     result = runner.invoke(app, ["calendar", "--help"])
     assert result.exit_code == 0
-    assert "--timezone" in result.output
-    assert "local" in result.output.lower()
-    assert "UTC" in result.output
-    assert "--from" in result.output and "--to" in result.output
+    output = _plain_output(result)
+    assert "--timezone" in output
+    assert "local" in output.lower()
+    assert "UTC" in output
+    assert "--from" in output and "--to" in output
 
 
 def test_calendar_pads_week_and_marks_future_cells_with_generation_time(tmp_path: Path):
