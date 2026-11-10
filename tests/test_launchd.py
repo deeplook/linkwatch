@@ -17,6 +17,13 @@ def test_root_help_exposes_launchd_group():
     assert "launchd" in result.output
 
 
+def test_launchd_install_help_mentions_root_config_option(plain_cli_output):
+    result = runner.invoke(app, ["launchd", "install", "--help"])
+
+    assert result.exit_code == 0
+    assert "--config PATH" in plain_cli_output(result)
+
+
 def test_python_module_entrypoint_runs_cli_help():
     result = subprocess.run(
         [sys.executable, "-m", "linkwatch", "--help"],
@@ -26,6 +33,29 @@ def test_python_module_entrypoint_runs_cli_help():
     )
     assert result.returncode == 0, result.stderr
     assert "launchd" in result.stdout
+
+
+def test_build_agent_plist_persists_explicit_config_path(tmp_path: Path):
+    config_path = tmp_path / "config dir" / "probes.toml"
+
+    plist = launchd.build_agent_plist(
+        python_executable="/opt/linkwatch/bin/python",
+        period=5,
+        timeout=2,
+        log_path=tmp_path / "connectivity.csv",
+        home=tmp_path,
+        config_path=config_path,
+    )
+
+    assert plist["ProgramArguments"][:7] == [
+        "/opt/linkwatch/bin/python",
+        "-m",
+        "linkwatch",
+        "--config",
+        str(config_path),
+        "monitor",
+        "--interval",
+    ]
 
 
 def test_install_writes_per_user_plist_and_bootstraps_without_live_launchctl(
@@ -163,6 +193,38 @@ def test_stop_unloads_a_loaded_agent(monkeypatch):
         (["disable", "gui/501/com.linkwatch.agent"], True),
         (["bootout", "gui/501/com.linkwatch.agent"], True),
     ]
+
+
+def test_launchd_cli_install_forwards_explicit_config_path(monkeypatch, tmp_path: Path):
+    config_path = tmp_path / "probes.toml"
+    config_path.write_text(
+        '[[targets]]\nname = "Regional"\nurl = "https://regional.example/"\n',
+        encoding="utf-8",
+    )
+    calls = []
+    monkeypatch.setattr(launchd, "install_service", lambda *args: calls.append(args) or Path("/agent.plist"))
+
+    result = runner.invoke(app, ["--config", str(config_path), "launchd", "install"])
+
+    assert result.exit_code == 0, result.output
+    assert calls[0][-1] == config_path.resolve()
+
+
+def test_launchd_install_rejects_invalid_config_before_backend_install(monkeypatch, tmp_path: Path):
+    config_path = tmp_path / "bad.toml"
+    config_path.write_text("targets = []\n", encoding="utf-8")
+    calls = []
+    monkeypatch.setattr(
+        launchd,
+        "install_service",
+        lambda *args: calls.append(args) or Path("/agent.plist"),
+    )
+
+    result = runner.invoke(app, ["--config", str(config_path), "launchd", "install"])
+
+    assert result.exit_code == 1
+    assert str(config_path) in result.output
+    assert calls == []
 
 
 def test_install_refuses_to_replace_an_unrelated_existing_plist(tmp_path: Path, monkeypatch):

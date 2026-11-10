@@ -13,6 +13,7 @@ from typing import Annotated, NoReturn
 
 import typer
 
+from .config import load_config
 from .defaults import DEFAULT_INTERVAL, DEFAULT_LOG, DEFAULT_TIMEOUT
 
 LABEL = "com.linkwatch.agent"
@@ -64,6 +65,7 @@ def build_agent_plist(
     timeout: float,
     log_path: Path,
     home: Path,
+    config_path: Path | None = None,
 ) -> dict[str, object]:
     """Build the LaunchAgent plist without writing files or invoking launchctl."""
     if period <= 0:
@@ -71,12 +73,11 @@ def build_agent_plist(
     if timeout <= 0:
         raise ValueError("timeout must be greater than zero")
     state_dir = home / ".linkwatch"
-    return {
-        "Label": LABEL,
-        "ProgramArguments": [
-            python_executable,
-            "-m",
-            "linkwatch",
+    arguments = [python_executable, "-m", "linkwatch"]
+    if config_path is not None:
+        arguments.extend(("--config", str(config_path)))
+    arguments.extend(
+        (
             "monitor",
             "--interval",
             str(period),
@@ -84,7 +85,11 @@ def build_agent_plist(
             str(timeout),
             "--log",
             str(log_path),
-        ],
+        )
+    )
+    return {
+        "Label": LABEL,
+        "ProgramArguments": arguments,
         "RunAtLoad": True,
         "KeepAlive": True,
         "WorkingDirectory": str(home),
@@ -116,7 +121,12 @@ def _write_plist_atomically(path: Path, value: dict[str, object]) -> None:
         temporary_path.unlink(missing_ok=True)
 
 
-def install_service(period: float, timeout: float, log_path: Path) -> Path:
+def install_service(
+    period: float,
+    timeout: float,
+    log_path: Path,
+    config_path: Path | None = None,
+) -> Path:
     """Write the agent plist and bootstrap it into the current GUI domain."""
     if AGENT_PATH.exists():
         try:
@@ -143,6 +153,7 @@ def install_service(period: float, timeout: float, log_path: Path) -> Path:
         timeout=timeout,
         log_path=log_path,
         home=Path.home(),
+        config_path=config_path,
     )
     _write_plist_atomically(AGENT_PATH, value)
     launchctl(["bootstrap", service_domain(), str(AGENT_PATH)])
@@ -184,6 +195,7 @@ def _report_error(error: Exception) -> NoReturn:
 
 @app.command()
 def install(
+    ctx: typer.Context,
     period: Annotated[
         float,
         typer.Option("--period", "--interval", help="Seconds between checks; fractional seconds are supported.", min=0.000001),
@@ -197,9 +209,12 @@ def install(
         typer.Option(help="CSV path (default: ~/.linkwatch/connectivity.csv)."),
     ] = DEFAULT_LOG,
 ) -> None:
-    """Install and start the per-user LaunchAgent (starts at future logins)."""
+    """Install the LaunchAgent; set root --config PATH before launchd to choose targets."""
     try:
-        path = install_service(period, timeout, log)
+        selected_config = (ctx.find_root().obj or {}).get("config_path")
+        settings = load_config(selected_config)
+        persisted_config = settings.path if selected_config is not None else None
+        path = install_service(period, timeout, log, persisted_config)
     except (LaunchdError, OSError, ValueError) as error:
         _report_error(error)
     typer.echo(f"Installed and started {LABEL} from {path}")

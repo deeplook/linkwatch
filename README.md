@@ -10,9 +10,10 @@
 
 Link Watch is a small command-line monitor for internet reachability. Every five
 seconds by default, it tries Google, Apple, then Microsoft, stopping at the first
-successful response. If all three checks fail, it records the connection as
-offline. It logs connectivity transitions to CSV and can render the history as
-an SVG timeline or outage calendar.
+successful response. An optional TOML configuration can replace those default
+HTTP probe endpoints. If every configured target fails, Link Watch records the
+connection as offline. It logs connectivity transitions to CSV and can render
+the history as an SVG timeline or outage calendar.
 
 ## Example calendar
 
@@ -24,7 +25,9 @@ October 24, so October 21–23 have no coverage.*
 - **Platforms:** requires Python 3.12 or newer. Background-service management
   supports macOS (LaunchAgent) and Linux with `systemd --user`. Windows is not
   currently tested or officially supported, and has no built-in service backend.
-- **Network and privacy:** probes contact Google, Apple, and Microsoft. On a
+- **Network and privacy:** by default, probes contact Google, Apple, and
+  Microsoft; a custom configuration replaces those destinations with its listed
+  URLs. Probe hosts can observe the public address and request metadata. On a
   detected reconnection, Link Watch also asks ipify (then icanhazip as fallback)
   for the public IPv4/IPv6 addresses and saves any returned addresses in the
   local CSV log. Those lookup services can observe the public address. See
@@ -70,8 +73,60 @@ Render the recorded history with `linkwatch chart` or `linkwatch calendar`; see
 [Charts](#charts). Running `linkwatch` without a command displays help. Use
 `linkwatch --help` or `linkwatch <command> --help` for command details.
 
+## Probe target configuration
+
+By default, Link Watch tries the built-in Google, Apple, and Microsoft HTTP
+checks. To use other targets, create `~/.config/linkwatch/config.toml` with one
+or more `[[targets]]` entries. Replace the placeholder URL below with an
+absolute HTTP(S) URL that returns a successful response:
+
+```toml
+[[targets]]
+name = "Regional check"
+url = "https://example.invalid/health"
+
+[[targets]]
+name = "Backup check"
+url = "https://another.example.invalid/health"
+```
+
+When the default config file exists, its target list *replaces* the built-ins;
+it is not appended to them. Targets are checked in listed order; the first HTTP
+2xx or 3xx response means that target was reachable and Link Watch considers
+the connection online. If no default config file exists, the built-in targets
+are used. A malformed file, an empty target list, or a missing explicitly
+selected file is reported as an error before monitoring starts.
+
+Select a different file by placing the root option before the command:
+
+```sh
+linkwatch --config /path/to/probes.toml monitor
+linkwatch --config /path/to/probes.toml service install
+```
+
+An explicit config path is preserved in an installed LaunchAgent or systemd
+user service. Without an explicit path, a service reads the default config path
+when it starts. Inspect or validate the effective configuration without making
+network requests:
+
+```sh
+linkwatch config path
+linkwatch config show
+linkwatch --config /path/to/probes.toml config validate
+```
+
+Each entry requires a non-empty, unique `name` and an absolute `http` or
+`https` `url`; embedded URL credentials are rejected. `config show` redacts URL
+query and fragment values, and the CSV records only the responding target label,
+not its URL. Do not put credentials or other secrets in target URLs. Link Watch
+does not ship country-specific profiles: choose endpoints that are reachable
+and meaningful for your own network. A successful check measures reachability
+to at least one configured endpoint; it does not prove access to every internet
+destination or identify why another endpoint failed.
+
 ## Monitor options
 
+- `--config PATH` (root option, before the command): probe-target TOML file (default `~/.config/linkwatch/config.toml`)
 - `--interval` / `--period SECONDS`: seconds between probe cycles (default `5`); accepts fractional values such as `0.5`.
 - `--timeout SECONDS`: per-endpoint request timeout in seconds (default `2`)
 - `--log PATH`: CSV log path (default `~/.linkwatch/connectivity.csv`; its parent directory is created automatically)
@@ -90,8 +145,8 @@ an unmatched start may indicate that monitoring ended unexpectedly. On a later
 restart, the next start row identifies the new run but cannot establish the exact
 failure time. A failed first probe is logged as `disconnected`; startup while
 online still does not create a synthetic connectivity event. For a `connected`
-event, `endpoint` contains only the provider label `Google`, `Apple`, or
-`Microsoft` that first responded. Link Watch also records `public_ipv4` and
+event, `endpoint` contains only the configured target label that first
+responded. Link Watch also records `public_ipv4` and
 `public_ipv6` on that row, querying ipify first and icanhazip only as a fallback
 for each family. If an address family is unavailable or both lookups fail, its
 field is blank. These lookups run only on a detected reconnection, not on every

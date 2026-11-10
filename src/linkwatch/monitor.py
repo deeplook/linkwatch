@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ipaddress
 import time
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from http.client import HTTPException
@@ -45,10 +46,13 @@ def probe(endpoint_url: str, timeout: float) -> bool:
 
 
 def find_reachable_endpoint(
-    *, check: Callable[[str, float], bool] = probe, timeout: float = DEFAULT_TIMEOUT
+    *,
+    check: Callable[[str, float], bool] = probe,
+    timeout: float = DEFAULT_TIMEOUT,
+    endpoints: Sequence[Endpoint] = ENDPOINTS,
 ) -> Endpoint | None:
-    """Try Google, then Apple, then Microsoft; return the first responder."""
-    for endpoint in ENDPOINTS:
+    """Try endpoints in order and return the first responder."""
+    for endpoint in endpoints:
         if check(endpoint.url, timeout):
             return endpoint
     return None
@@ -79,6 +83,7 @@ def monitor(
     check: Callable[[str, float], bool] = probe,
     sleep: Callable[[float], None] = time.sleep,
     lookup_ip: Callable[[int, float], str | None] = lookup_public_ip,
+    endpoints: Sequence[Endpoint] = ENDPOINTS,
 ) -> None:
     """Poll until interrupted, logging only offline/online transitions."""
     if interval <= 0:
@@ -88,7 +93,7 @@ def monitor(
 
     previous_online: bool | None = None
     while True:
-        endpoint = find_reachable_endpoint(check=check, timeout=timeout)
+        endpoint = find_reachable_endpoint(check=check, timeout=timeout, endpoints=endpoints)
         online = endpoint is not None
         if previous_online is None and not online:
             append_event(log_path, "disconnected")
