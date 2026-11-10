@@ -1,10 +1,22 @@
 # Link Watch
 
+[![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue.svg)](https://www.python.org/downloads/)
+[![License](https://img.shields.io/github/license/deeplook/linkwatch.svg)](https://github.com/deeplook/linkwatch/blob/main/LICENSE)
+[![GitHub issues](https://img.shields.io/github/issues/deeplook/linkwatch.svg)](https://github.com/deeplook/linkwatch/issues)
+[![GitHub stars](https://img.shields.io/github/stars/deeplook/linkwatch.svg)](https://github.com/deeplook/linkwatch/stargazers)
+
 Link Watch is a small command-line monitor for internet reachability. Every five
 seconds by default, it tries Google, Apple, then Microsoft, stopping at the first
 successful response. If all three checks fail, it records the connection as
 offline. It logs connectivity transitions to CSV and can render the history as
 an SVG timeline or outage calendar.
+
+## Example calendar
+
+![Link Watch calendar chart for October 21–November 10, 2026, showing 11 outages totaling 34 minutes 35 seconds.](assets/linkwatch-calendar-2026-10-21-to-2026-11-10.png)
+
+*Three-week example (October 21–November 10, 2026). The recorded log begins
+October 24, so October 21–23 have no coverage.*
 
 - **Platforms:** requires Python 3.12 or newer. Background-service management
   supports macOS (LaunchAgent) and Linux with `systemd --user`. Windows is not
