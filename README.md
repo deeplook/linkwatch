@@ -4,6 +4,7 @@
 [![License](https://img.shields.io/github/license/deeplook/linkwatch.svg)](https://github.com/deeplook/linkwatch/blob/main/LICENSE)
 [![GitHub issues](https://img.shields.io/github/issues/deeplook/linkwatch.svg)](https://github.com/deeplook/linkwatch/issues)
 [![GitHub stars](https://img.shields.io/github/stars/deeplook/linkwatch.svg)](https://github.com/deeplook/linkwatch/stargazers)
+[![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-ffdd00?style=flat&logo=buy-me-a-coffee&logoColor=black)](https://www.buymeacoffee.com/deeplook)
 
 Link Watch is a small command-line monitor for internet reachability. Every five
 seconds by default, it tries Google, Apple, then Microsoft, stopping at the first
