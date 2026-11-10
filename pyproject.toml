@@ -3,6 +3,7 @@ name = "linkwatch"
 version = "0.2.0"
 description = "Monitor internet connectivity and log outages to CSV"
 readme = "README.md"
+license = "MIT"
 authors = [
     { name = "Dinu Gherman", email = "gherman@darwin.in-berlin.de" }
 ]
@@ -24,4 +25,4 @@ dev = [
 ]
 
 [tool.uv.build-backend]
-source-include = ["tests/**"]
+source-include = ["tests/**", "LICENSE"]

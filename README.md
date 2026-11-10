@@ -1,42 +1,59 @@
 # Link Watch
 
-A small command-line monitor for internet reachability. Each probe cycle tries
-Google first, then Apple, then Microsoft, stopping at the first successful
-response. Each endpoint gets its own timeout (two seconds by default); if all
-three fail, the cycle is considered offline. The default interval between cycles
-is five seconds.
+Link Watch is a small command-line monitor for internet reachability. Every five
+seconds by default, it tries Google, Apple, then Microsoft, stopping at the first
+successful response. If all three checks fail, it records the connection as
+offline. It logs connectivity transitions to CSV and can render the history as
+an SVG timeline or outage calendar.
 
-## Install and run
+- **Platforms:** requires Python 3.12 or newer. Background-service management
+  supports macOS (LaunchAgent) and Linux with `systemd --user`. Windows is not
+  currently tested or officially supported, and has no built-in service backend.
+- **Network and privacy:** checks contact Google, Apple, and Microsoft. On a
+  detected reconnection, Link Watch also asks ipify (then icanhazip as fallback)
+  for the public IPv4/IPv6 addresses and saves any returned addresses in the
+  local CSV log. Those lookup services can observe the public address. See
+  [monitor behavior and logged data](#monitor-options) for details.
+- **License:** [MIT](LICENSE)
 
-Link Watch requires Python 3.12 or newer. Install [uv](https://docs.astral.sh/uv/),
-clone this repository, and install the command as a user-level tool from the
-repository directory:
+## Install
+
+This README documents source installation; it does not currently provide a
+package-index install command. Install [uv](https://docs.astral.sh/uv/) and Python
+3.12 or newer, then clone the project using its repository address and install
+it as a user-level command-line tool:
 
 ```sh
 git clone <repository-url>
 cd linkwatch
-uv tool install --editable .
+uv tool install .
 ```
 
-The editable install keeps the command connected to this checkout. Make sure
-uv's executable directory is on your `PATH`; then you can run `linkwatch` from
-any directory. Start monitoring with:
+Replace `<repository-url>` with the repository address for the release. This
+installs the checked-out version as a regular tool, not as an editable development
+copy. Ensure uv's executable directory is on your `PATH`; then `linkwatch` can be
+run from any directory. To use a downloaded source archive instead, extract it,
+open a terminal in the extracted project directory, and run `uv tool install .`.
+
+## Quick start
+
+Start monitoring:
 
 ```sh
 linkwatch monitor
-# Poll every half-second instead of the default five seconds:
+```
+
+Stop it with Ctrl-C. The event log is written to
+`~/.linkwatch/connectivity.csv` by default. To poll every half-second instead of
+every five seconds:
+
+```sh
 linkwatch monitor --period 0.5
 ```
 
-The monitor writes its event log to `~/.linkwatch/connectivity.csv` by default.
-You can render that history as an SVG timeline or outage calendar with the
-`chart` and `calendar` commands described below.
-
-The CLI is organized into explicit subcommands: `monitor` runs the connectivity
-checks, `chart` renders the transition log as a timeline, `calendar` renders outages
-in a day/week grid, and `launchd` manages the per-user macOS LaunchAgent. Running
-`linkwatch` without a command displays help. Use
-`linkwatch --help` or `linkwatch <command> --help` for details.
+Render the recorded history with `linkwatch chart` or `linkwatch calendar`; see
+[Charts](#charts). Running `linkwatch` without a command displays help. Use
+`linkwatch --help` or `linkwatch <command> --help` for command details.
 
 ## Monitor options
 
@@ -50,7 +67,7 @@ clean stop with SIGTERM. The CSV columns are
 migrated atomically on the next event write; historical IP fields remain blank
 because they cannot be reconstructed.
 
-Connectivity rows (`connected` / `disconnected`) are still written only when
+Connectivity rows (`connected` / `disconnected`) are written only when
 reachability changes. Each monitor process adds `monitor_started` at startup and
 `monitor_stopped` when it exits gracefully; lifecycle rows have an empty endpoint.
 A crash, unhandled failure, or forced kill cannot reliably write a stop row, so
@@ -76,7 +93,9 @@ cause misleading results.
 ## Background service
 
 The platform-neutral `service` subcommands select the native per-user service
-manager automatically: LaunchAgent on macOS, and `systemd --user` on Linux.
+manager automatically: LaunchAgent on macOS and `systemd --user` on Linux. This
+is optional; you can run `linkwatch monitor` directly instead. Windows is not
+currently tested or officially supported, and has no built-in service backend.
 
 ```sh
 linkwatch service install --period 5
@@ -92,19 +111,19 @@ to the journal and can be inspected with
 `journalctl --user -u linkwatch.service`. The service starts with the user's
 systemd session. To keep it running after logout, enable lingering for the user
 if supported by the distribution (for example, `loginctl enable-linger "$USER"`).
-Distributions without systemd user services are not currently supported.
+Distributions without systemd user services are not currently supported by the
+built-in Linux service commands; running the monitor directly may still work.
 
 On macOS, the platform-neutral commands manage the same per-user LaunchAgent
 described below. The explicit `linkwatch launchd` command group remains
 available for macOS-specific operation.
 
-## macOS LaunchAgent
+### macOS LaunchAgent
 
-Link Watch can run in the background as a per-user macOS LaunchAgent. Install the tool first, then install the agent from the same environment so the plist points at the right Python interpreter:
+After installing Link Watch using the [instructions above](#install), install and
+check the per-user LaunchAgent:
 
 ```bash
-cd ~/dev/linkwatch
-uv tool install --editable .
 linkwatch launchd install --period 5
 linkwatch launchd status
 ```
@@ -128,7 +147,7 @@ linkwatch launchd install --period 0.5 --log ~/Documents/linkwatch.csv
 
 These commands target only the current user's GUI launchd domain; they do not use `sudo` or install a system-wide daemon. `stop` leaves the plist in place but disables it across logins; `uninstall` removes the plist and clears that disabled state. The CSV and diagnostic logs are retained.
 
-## Chart
+## Charts
 
 Generate a dependency-free SVG timeline from the recorded transitions:
 
