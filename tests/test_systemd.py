@@ -30,6 +30,21 @@ def test_build_unit_quotes_arguments_and_configures_user_service(tmp_path: Path)
     assert "WantedBy=default.target" in unit
 
 
+def test_build_unit_persists_explicit_config_path(tmp_path: Path):
+    config_path = tmp_path / "config dir" / "probes.toml"
+
+    unit = systemd.build_unit_file(
+        python_executable="/opt/linkwatch/bin/python",
+        period=5,
+        timeout=2,
+        log_path=tmp_path / "connectivity.csv",
+        home=tmp_path,
+        config_path=config_path,
+    )
+
+    assert f'"--config" "{config_path}" "monitor"' in unit
+
+
 def test_systemctl_always_targets_the_current_users_manager(monkeypatch):
     calls = []
 

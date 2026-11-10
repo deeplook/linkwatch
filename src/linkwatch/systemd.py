@@ -58,6 +58,7 @@ def build_unit_file(
     timeout: float,
     log_path: Path,
     home: Path,
+    config_path: Path | None = None,
 ) -> str:
     """Build a per-user systemd unit without writing files or invoking systemctl."""
     if period <= 0:
@@ -65,10 +66,14 @@ def build_unit_file(
     if timeout <= 0:
         raise ValueError("timeout must be greater than zero")
 
-    arguments = (
+    arguments = [
         python_executable,
         "-m",
         "linkwatch",
+    ]
+    if config_path is not None:
+        arguments.extend(("--config", str(config_path)))
+    arguments.extend((
         "monitor",
         "--interval",
         str(period),
@@ -76,7 +81,7 @@ def build_unit_file(
         str(timeout),
         "--log",
         str(log_path),
-    )
+    ))
     exec_start = " ".join(_quote_exec_argument(argument) for argument in arguments)
     working_directory = _quote_exec_argument(str(home))
     return f"""[Unit]
@@ -120,7 +125,12 @@ def service_status() -> bool:
     raise SystemdError(f"could not determine {UNIT_NAME} status: {detail}")
 
 
-def install_service(period: float, timeout: float, log_path: Path) -> Path:
+def install_service(
+    period: float,
+    timeout: float,
+    log_path: Path,
+    config_path: Path | None = None,
+) -> Path:
     """Install/refresh the managed unit and enable it in the current user manager."""
     was_active = False
     if UNIT_PATH.exists():
@@ -139,6 +149,7 @@ def install_service(period: float, timeout: float, log_path: Path) -> Path:
         timeout=timeout,
         log_path=log_path,
         home=Path.home(),
+        config_path=config_path,
     )
     _write_unit_atomically(UNIT_PATH, contents)
     systemctl(["daemon-reload"])

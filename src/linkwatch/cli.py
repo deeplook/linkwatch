@@ -6,13 +6,20 @@ import signal
 from datetime import date, datetime
 from importlib.metadata import version
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, NoReturn
 
 import typer
 
 from .calendar_chart import generate_calendar_chart
 from .chart import generate_chart
-from .defaults import DEFAULT_CHART, DEFAULT_INTERVAL, DEFAULT_LOG, DEFAULT_TIMEOUT
+from .config import ConfigError, ConfigSettings, load_config, redact_url
+from .defaults import (
+    DEFAULT_CHART,
+    DEFAULT_CONFIG,
+    DEFAULT_INTERVAL,
+    DEFAULT_LOG,
+    DEFAULT_TIMEOUT,
+)
 from .events import append_event
 from .launchd import app as launchd_app
 from .monitor import monitor
@@ -24,10 +31,16 @@ app = typer.Typer(
     no_args_is_help=True,
     context_settings={"help_option_names": ["-h", "--help"]},
     help=(
-        "Monitor internet reachability using Google first, then Apple and Microsoft "
-        "as fallbacks. Log connectivity transitions to CSV."
+        "Monitor internet reachability using built-in Google, Apple, and Microsoft "
+        "checks or user-configured targets. Log connectivity transitions to CSV."
     ),
 )
+config_app = typer.Typer(
+    no_args_is_help=True,
+    context_settings={"help_option_names": ["-h", "--help"]},
+    help="Inspect and validate probe-target configuration.",
+)
+app.add_typer(config_app, name="config")
 app.add_typer(launchd_app, name="launchd")
 app.add_typer(service_app, name="service")
 
@@ -41,6 +54,7 @@ def version_callback(value: bool) -> None:
 
 @app.callback()
 def root(
+    ctx: typer.Context,
     version: Annotated[
         bool,
         typer.Option(
@@ -49,8 +63,67 @@ def root(
             help="Show the version and exit.",
         ),
     ] = False,
+    config_path: Annotated[
+        Path | None,
+        typer.Option("--config", help="Probe-target TOML file (default: ~/.config/linkwatch/config.toml)."),
+    ] = None,
 ) -> None:
     """Monitor internet reachability and log outages."""
+    ctx.ensure_object(dict)
+    ctx.obj["config_path"] = config_path
+
+
+def _config_path_from_context(ctx: typer.Context) -> Path | None:
+    """Return the root --config option, if explicitly supplied."""
+    root_context = ctx.find_root()
+    return (root_context.obj or {}).get("config_path")
+
+
+def _load_config_from_context(ctx: typer.Context) -> ConfigSettings:
+    """Load configuration selected for this invocation."""
+    return load_config(_config_path_from_context(ctx))
+
+
+def _report_config_error(error: ConfigError) -> NoReturn:
+    typer.echo(f"Error: {error}", err=True)
+    raise typer.Exit(code=1) from error
+
+
+@config_app.command("path")
+def config_path_command(ctx: typer.Context) -> None:
+    """Show the selected configuration path and whether a file exists there."""
+    selected = _config_path_from_context(ctx)
+    path = (selected if selected is not None else DEFAULT_CONFIG).expanduser().resolve()
+    source = "command line" if selected is not None else "default"
+    typer.echo(f"Configuration path: {path}")
+    typer.echo(f"Selected by: {source}")
+    typer.echo(f"File exists: {'yes' if path.is_file() else 'no'}")
+
+
+@config_app.command("show")
+def config_show(ctx: typer.Context) -> None:
+    """Show the effective target labels and URLs, redacting query values."""
+    try:
+        settings = _load_config_from_context(ctx)
+    except ConfigError as error:
+        _report_config_error(error)
+    typer.echo(f"Configuration source: {settings.source}")
+    typer.echo(f"Configuration path: {settings.path}")
+    typer.echo(f"Targets ({len(settings.targets)}):")
+    for target in settings.targets:
+        typer.echo(f"- {target.name}: {redact_url(target.url)}")
+
+
+@config_app.command("validate")
+def config_validate(ctx: typer.Context) -> None:
+    """Validate the selected configuration without making network requests."""
+    try:
+        settings = _load_config_from_context(ctx)
+    except ConfigError as error:
+        _report_config_error(error)
+    count = len(settings.targets)
+    label = "target" if count == 1 else "targets"
+    typer.echo(f"Configuration valid: {count} {label} ({settings.source})")
 
 
 def _handle_sigterm(_signum: int, _frame: object) -> None:
@@ -60,6 +133,7 @@ def _handle_sigterm(_signum: int, _frame: object) -> None:
 
 @app.command("monitor")
 def monitor_cli(
+    ctx: typer.Context,
     interval: Annotated[
         float,
         typer.Option(
@@ -75,7 +149,11 @@ def monitor_cli(
         typer.Option(help="CSV log path (default: ~/.linkwatch/connectivity.csv)."),
     ] = DEFAULT_LOG,
 ) -> None:
-    """Monitor internet reachability and record monitor lifecycle events."""
+    """Monitor internet reachability; set root --config PATH before monitor to choose targets."""
+    try:
+        settings = _load_config_from_context(ctx)
+    except ConfigError as error:
+        _report_config_error(error)
     previous_sigterm_handler = signal.signal(signal.SIGTERM, _handle_sigterm)
     started = False
     stopped_gracefully = False
@@ -83,7 +161,7 @@ def monitor_cli(
         append_event(log, "monitor_started")
         started = True
         try:
-            monitor(interval, timeout, log)
+            monitor(interval, timeout, log, endpoints=settings.targets)
         except KeyboardInterrupt:
             stopped_gracefully = True
             typer.echo("stopped")

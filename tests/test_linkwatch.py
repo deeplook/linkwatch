@@ -14,6 +14,7 @@ from linkwatch.events import append_event
 from linkwatch.monitor import (
     ENDPOINTS,
     PUBLIC_IP_ENDPOINTS,
+    Endpoint,
     find_reachable_endpoint,
     lookup_public_ip,
     monitor,
@@ -35,6 +36,7 @@ def test_default_log_uses_hidden_home_directory():
 def test_cli_help_uses_linkwatch_and_lists_timing_and_log_defaults():
     result = runner.invoke(app, ["--help"])
     assert result.exit_code == 0
+    assert "user-configured targets" in _plain_output(result).lower()
     assert "monitor" in result.output
     assert "chart" in result.output
     assert "launchd" in result.output
@@ -47,6 +49,7 @@ def test_cli_monitor_help_lists_timing_and_log_options():
     output = _plain_output(result)
     assert "--interval" in output
     assert "--period" in output
+    assert "--config PATH" in output
     assert ".linkwatch" in output
 
 
@@ -63,8 +66,8 @@ def test_cli_chart_help_lists_log_and_output_options():
 def test_cli_period_accepts_fractional_seconds_and_defaults_to_canonical_log(monkeypatch):
     received = {}
 
-    def stop_monitor(interval, timeout, log_path):
-        received.update(interval=interval, timeout=timeout, log_path=log_path)
+    def stop_monitor(interval, timeout, log_path, *, endpoints):
+        received.update(interval=interval, timeout=timeout, log_path=log_path, endpoints=endpoints)
         raise KeyboardInterrupt
 
     monkeypatch.setattr("linkwatch.cli.monitor", stop_monitor)
@@ -76,7 +79,43 @@ def test_cli_period_accepts_fractional_seconds_and_defaults_to_canonical_log(mon
         "interval": 0.25,
         "timeout": 1.5,
         "log_path": Path.home() / ".linkwatch" / "connectivity.csv",
+        "endpoints": ENDPOINTS,
     }
+
+
+def test_monitor_cli_uses_targets_from_explicit_config(monkeypatch, tmp_path: Path):
+    config_path = tmp_path / "probes.toml"
+    config_path.write_text(
+        '[[targets]]\nname = "Regional Check"\nurl = "https://regional.example/check"\n',
+        encoding="utf-8",
+    )
+    received = {}
+
+    def stop_monitor(interval, timeout, log_path, *, endpoints):
+        received.update(interval=interval, timeout=timeout, log_path=log_path, endpoints=endpoints)
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr("linkwatch.cli.monitor", stop_monitor)
+    monkeypatch.setattr("linkwatch.cli.append_event", lambda *_args, **_kwargs: None)
+
+    result = runner.invoke(app, ["--config", str(config_path), "monitor"])
+
+    assert result.exit_code == 0, result.output
+    assert received["endpoints"] == (Endpoint("Regional Check", "https://regional.example/check"),)
+
+
+def test_monitor_cli_rejects_bad_config_before_starting_or_logging(monkeypatch, tmp_path: Path):
+    config_path = tmp_path / "bad.toml"
+    config_path.write_text("targets = []\n", encoding="utf-8")
+    calls = []
+    monkeypatch.setattr("linkwatch.cli.monitor", lambda *_args, **_kwargs: calls.append("monitor"))
+    monkeypatch.setattr("linkwatch.cli.append_event", lambda *_args, **_kwargs: calls.append("event"))
+
+    result = runner.invoke(app, ["--config", str(config_path), "monitor"])
+
+    assert result.exit_code == 1
+    assert str(config_path) in result.output
+    assert calls == []
 
 
 def test_monitor_cli_logs_start_and_graceful_keyboard_interrupt(monkeypatch, tmp_path: Path):
@@ -196,6 +235,21 @@ def test_fallback_returns_none_when_all_providers_fail():
         check=lambda url, _timeout: attempted.append(url) or False
     ) is None
     assert attempted == [endpoint.url for endpoint in ENDPOINTS]
+
+
+def test_fallback_checks_configured_targets_in_order_and_stops_on_success():
+    configured = (
+        Endpoint("Regional One", "https://one.example/check"),
+        Endpoint("Regional Two", "https://two.example/check"),
+    )
+    attempted = []
+
+    def check(url, _timeout):
+        attempted.append(url)
+        return url == configured[1].url
+
+    assert find_reachable_endpoint(check=check, endpoints=configured) == configured[1]
+    assert attempted == [target.url for target in configured]
 
 
 def test_csv_contains_provider_label_and_only_one_header(tmp_path: Path):
@@ -375,6 +429,37 @@ def test_monitor_looks_up_public_ips_only_on_reconnection(monkeypatch, tmp_path:
     assert [row["public_ipv4"] for row in rows] == ["", "203.0.113.5", "", "203.0.113.5"]
     assert [row["public_ipv6"] for row in rows] == ["", "2001:db8::5", "", "2001:db8::5"]
     assert calls == [(4, 1.25), (6, 1.25), (4, 1.25), (6, 1.25)]
+
+
+def test_monitor_passes_configured_targets_and_logs_the_selected_label(monkeypatch, tmp_path: Path):
+    configured = (Endpoint("Regional Check", "https://regional.example/check"),)
+    outcomes = iter([None, configured[0], KeyboardInterrupt()])
+    received_targets = []
+
+    def find_target(**kwargs):
+        received_targets.append(kwargs["endpoints"])
+        result = next(outcomes)
+        if isinstance(result, BaseException):
+            raise result
+        return result
+
+    monkeypatch.setattr("linkwatch.monitor.find_reachable_endpoint", find_target)
+    log_path = tmp_path / "events.csv"
+    with pytest.raises(KeyboardInterrupt):
+        monitor(
+            interval=1,
+            timeout=1,
+            log_path=log_path,
+            endpoints=configured,
+            sleep=lambda _seconds: None,
+            lookup_ip=lambda _version, _timeout: None,
+        )
+
+    with log_path.open(newline="", encoding="utf-8") as file:
+        rows = list(csv.DictReader(file))
+    assert received_targets[:2] == [configured, configured]
+    assert [row["event"] for row in rows] == ["disconnected", "connected"]
+    assert rows[1]["endpoint"] == "Regional Check"
 
 
 def test_chart_writes_svg_connectivity_timeline(tmp_path: Path):

@@ -10,6 +10,7 @@ from typing import Annotated, NoReturn
 import typer
 
 from . import launchd, systemd
+from .config import load_config
 from .defaults import DEFAULT_INTERVAL, DEFAULT_LOG, DEFAULT_TIMEOUT
 
 app = typer.Typer(
@@ -42,6 +43,7 @@ def _report_error(error: Exception) -> NoReturn:
 
 @app.command()
 def install(
+    ctx: typer.Context,
     period: Annotated[
         float,
         typer.Option("--period", "--interval", help="Seconds between checks.", min=0.000001),
@@ -55,9 +57,12 @@ def install(
         typer.Option(help="CSV log path."),
     ] = DEFAULT_LOG,
 ) -> None:
-    """Install and start the native per-user service."""
+    """Install the per-user service; set root --config PATH before service to choose targets."""
     try:
-        path = get_backend().install_service(period, timeout, log)
+        selected_config = (ctx.find_root().obj or {}).get("config_path")
+        settings = load_config(selected_config)
+        persisted_config = settings.path if selected_config is not None else None
+        path = get_backend().install_service(period, timeout, log, persisted_config)
     except (RuntimeError, OSError, ValueError) as error:
         _report_error(error)
     typer.echo(f"Installed and started Link Watch service from {path}")
