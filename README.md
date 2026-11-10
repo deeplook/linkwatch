@@ -9,7 +9,7 @@ an SVG timeline or outage calendar.
 - **Platforms:** requires Python 3.12 or newer. Background-service management
   supports macOS (LaunchAgent) and Linux with `systemd --user`. Windows is not
   currently tested or officially supported, and has no built-in service backend.
-- **Network and privacy:** checks contact Google, Apple, and Microsoft. On a
+- **Network and privacy:** probes contact Google, Apple, and Microsoft. On a
   detected reconnection, Link Watch also asks ipify (then icanhazip as fallback)
   for the public IPv4/IPv6 addresses and saves any returned addresses in the
   local CSV log. Those lookup services can observe the public address. See
@@ -20,20 +20,20 @@ an SVG timeline or outage calendar.
 
 This README documents source installation; it does not currently provide a
 package-index install command. Install [uv](https://docs.astral.sh/uv/) and Python
-3.12 or newer, then clone the project using its repository address and install
-it as a user-level command-line tool:
+3.12 or newer, then clone the project and install it as a user-level command-line
+tool:
 
 ```sh
-git clone <repository-url>
+git clone https://github.com/deeplook/linkwatch.git
 cd linkwatch
 uv tool install .
 ```
 
-Replace `<repository-url>` with the repository address for the release. This
-installs the checked-out version as a regular tool, not as an editable development
-copy. Ensure uv's executable directory is on your `PATH`; then `linkwatch` can be
-run from any directory. To use a downloaded source archive instead, extract it,
-open a terminal in the extracted project directory, and run `uv tool install .`.
+This installs the checked-out version as a regular tool, not as an editable
+development copy. Ensure uv's executable directory is on your `PATH`; then
+`linkwatch` can be run from any directory. To use a downloaded source archive
+instead, extract it, open a terminal in the extracted project directory, and run
+`uv tool install .`.
 
 ## Quick start
 
