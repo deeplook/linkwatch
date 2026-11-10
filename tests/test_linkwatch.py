@@ -159,7 +159,8 @@ def test_cli_chart_mode_writes_requested_svg(tmp_path: Path):
 def test_cli_rejects_nonpositive_interval():
     result = runner.invoke(app, ["monitor", "--interval", "0"])
     assert result.exit_code != 0
-    assert "range" in result.output
+    assert "Invalid value" in result.output
+    assert "--interval" in result.output
 
 def test_probe_treats_transport_failure_as_offline(monkeypatch):
     def fail(*_args, **_kwargs):

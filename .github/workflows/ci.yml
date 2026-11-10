@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Tests (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Exercise every currently supported stable Python minor version.
+        python-version: ["3.12", "3.13", "3.14", "3.15"]
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+
+      - name: Set up Python ${{ matrix.python-version }}
+        run: uv python install "${{ matrix.python-version }}"
+
+      - name: Install project and test dependencies
+        run: uv sync --python "${{ matrix.python-version }}"
+
+      # Service-manager calls in the service tests are mocked; no service is
+      # installed, enabled, or started by this workflow.
+      - name: Run test suite
+        run: uv run --python "${{ matrix.python-version }}" python -m pytest -q
+
+      - name: Build wheel and source distribution
+        run: uv build --out-dir "$RUNNER_TEMP/dist"
