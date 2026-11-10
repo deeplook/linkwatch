@@ -1,6 +1,6 @@
 [project]
 name = "linkwatch"
-version = "0.2.0"
+version = "0.3.0"
 description = "Monitor internet connectivity and log outages to CSV"
 readme = "README.md"
 license = "MIT"
@@ -13,7 +13,7 @@ dependencies = [
 ]
 
 [project.scripts]
-linkwatch = "linkwatch:main"
+linkwatch = "linkwatch.cli:main"
 
 [build-system]
 requires = ["uv_build>=0.13.5,<0.14.0"]

@@ -5,7 +5,7 @@ from pathlib import Path
 
 from typer.testing import CliRunner
 
-from linkwatch import app
+from linkwatch.cli import app
 from linkwatch import launchd
 
 runner = CliRunner()

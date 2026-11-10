@@ -5,7 +5,8 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from linkwatch import app, launchd, service, systemd
+from linkwatch.cli import app
+from linkwatch import launchd, service, systemd
 
 runner = CliRunner()
 

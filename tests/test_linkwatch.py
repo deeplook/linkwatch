@@ -6,14 +6,14 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from linkwatch import (
-    DEFAULT_LOG,
+from linkwatch.chart import generate_chart
+from linkwatch.cli import app
+from linkwatch.defaults import DEFAULT_LOG
+from linkwatch.events import append_event
+from linkwatch.monitor import (
     ENDPOINTS,
     PUBLIC_IP_ENDPOINTS,
-    app,
-    append_event,
     find_reachable_endpoint,
-    generate_chart,
     lookup_public_ip,
     monitor,
     probe,
@@ -48,6 +48,7 @@ def test_cli_chart_help_lists_log_and_output_options():
     assert result.exit_code == 0
     assert "--log" in result.output
     assert "--output" in result.output
+    assert "--end-time" in result.output
     assert "lifecycle" in result.output.lower()
 
 
@@ -58,8 +59,8 @@ def test_cli_period_accepts_fractional_seconds_and_defaults_to_canonical_log(mon
         received.update(interval=interval, timeout=timeout, log_path=log_path)
         raise KeyboardInterrupt
 
-    monkeypatch.setattr("linkwatch.monitor", stop_monitor)
-    monkeypatch.setattr("linkwatch.append_event", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr("linkwatch.cli.monitor", stop_monitor)
+    monkeypatch.setattr("linkwatch.cli.append_event", lambda *_args, **_kwargs: None)
     result = runner.invoke(app, ["monitor", "--period", "0.25", "--timeout", "1.5"])
 
     assert result.exit_code == 0
@@ -76,7 +77,7 @@ def test_monitor_cli_logs_start_and_graceful_keyboard_interrupt(monkeypatch, tmp
     def interrupt(*_args, **_kwargs):
         raise KeyboardInterrupt
 
-    monkeypatch.setattr("linkwatch.monitor", interrupt)
+    monkeypatch.setattr("linkwatch.cli.monitor", interrupt)
     result = runner.invoke(app, ["monitor", "--log", str(log_path)])
 
     assert result.exit_code == 0
@@ -100,7 +101,7 @@ def test_monitor_cli_does_not_claim_graceful_stop_after_failure(monkeypatch, tmp
     def fail(*_args, **_kwargs):
         raise RuntimeError("simulated monitor failure")
 
-    monkeypatch.setattr("linkwatch.monitor", fail)
+    monkeypatch.setattr("linkwatch.cli.monitor", fail)
     result = runner.invoke(app, ["monitor", "--log", str(log_path)])
 
     assert result.exit_code == 1
@@ -118,7 +119,7 @@ def test_monitor_cli_logs_graceful_sigterm_and_restores_handler(monkeypatch, tmp
         assert callable(handler)
         handler(signal.SIGTERM, None)
 
-    monkeypatch.setattr("linkwatch.monitor", terminate)
+    monkeypatch.setattr("linkwatch.cli.monitor", terminate)
     result = runner.invoke(app, ["monitor", "--log", str(log_path)])
 
     assert result.exit_code == 0
@@ -134,7 +135,7 @@ def test_monitor_cli_does_not_claim_graceful_stop_after_unhandled_error(monkeypa
     def fail(*_args, **_kwargs):
         raise RuntimeError("unexpected monitor failure")
 
-    monkeypatch.setattr("linkwatch.monitor", fail)
+    monkeypatch.setattr("linkwatch.cli.monitor", fail)
     result = runner.invoke(app, ["monitor", "--log", str(log_path)])
 
     assert result.exit_code == 1
@@ -164,7 +165,7 @@ def test_probe_treats_transport_failure_as_offline(monkeypatch):
     def fail(*_args, **_kwargs):
         raise OSError("offline")
 
-    monkeypatch.setattr("linkwatch.urlopen", fail)
+    monkeypatch.setattr("linkwatch.monitor.urlopen", fail)
     assert probe("https://example.test", timeout=0.1) is False
 
 
@@ -261,7 +262,7 @@ def test_public_ip_lookup_falls_back_in_order_and_validates_family(monkeypatch):
             raise OSError("primary unavailable")
         return Response()
 
-    monkeypatch.setattr("linkwatch.urlopen", open_url)
+    monkeypatch.setattr("linkwatch.monitor.urlopen", open_url)
 
     assert lookup_public_ip(6, timeout=0.75) == "2001:4860:4860::8888"
     assert [url for url, _ in attempted] == list(PUBLIC_IP_ENDPOINTS[6])
@@ -288,7 +289,7 @@ def test_public_ip_lookup_rejects_wrong_family_and_tries_fallback(monkeypatch):
         attempted.append(request.full_url)
         return Response(b"2001:4860:4860::8888\n" if len(attempted) == 1 else b"8.8.8.8\n")
 
-    monkeypatch.setattr("linkwatch.urlopen", open_url)
+    monkeypatch.setattr("linkwatch.monitor.urlopen", open_url)
 
     assert lookup_public_ip(4, timeout=1) == "8.8.8.8"
     assert attempted == list(PUBLIC_IP_ENDPOINTS[4])
@@ -301,7 +302,7 @@ def test_public_ip_lookup_returns_none_when_all_endpoints_fail(monkeypatch):
         attempted.append(request.full_url)
         raise OSError("unavailable")
 
-    monkeypatch.setattr("linkwatch.urlopen", fail)
+    monkeypatch.setattr("linkwatch.monitor.urlopen", fail)
 
     assert lookup_public_ip(4, timeout=1) is None
     assert attempted == list(PUBLIC_IP_ENDPOINTS[4])
@@ -316,7 +317,7 @@ def test_monitor_logs_only_connectivity_transitions(monkeypatch, tmp_path: Path)
             raise result
         return result
 
-    monkeypatch.setattr("linkwatch.find_reachable_endpoint", lookup)
+    monkeypatch.setattr("linkwatch.monitor.find_reachable_endpoint", lookup)
     log_path = tmp_path / "events.csv"
     with pytest.raises(KeyboardInterrupt):
         monitor(
@@ -347,7 +348,7 @@ def test_monitor_looks_up_public_ips_only_on_reconnection(monkeypatch, tmp_path:
         calls.append((version, timeout))
         return "203.0.113.5" if version == 4 else "2001:db8::5"
 
-    monkeypatch.setattr("linkwatch.find_reachable_endpoint", check)
+    monkeypatch.setattr("linkwatch.monitor.find_reachable_endpoint", check)
     log_path = tmp_path / "events.csv"
     with pytest.raises(KeyboardInterrupt):
         monitor(

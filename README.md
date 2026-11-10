@@ -158,7 +158,25 @@ linkwatch chart --output connectivity.svg
 `chart` reads `~/.linkwatch/connectivity.csv` by default and writes
 `linkwatch.svg` in the current directory. Use `--log PATH` to chart a
 different CSV file and `--output PATH` to choose where the SVG is saved. For
-example, `linkwatch chart --log ~/Documents/linkwatch.csv --output week.svg`.
+example:
+
+```sh
+linkwatch chart --log ~/Documents/linkwatch.csv --output week.svg
+```
+
+By default the timeline ends at the current time (or at the latest event if it
+is later). To make the same event log render reproducibly, provide a fixed,
+timezone-aware ISO 8601 endpoint with `--end-time`:
+
+```sh
+linkwatch chart --log ~/Documents/linkwatch.csv \\
+  --end-time 2026-11-10T08:00:00+01:00 --output week.svg
+```
+
+The timestamp is normalized to UTC for display. The library API also exposes
+`read_chart_events()` for validated, UTC-sorted event data and `render_chart()`
+for rendering supplied events without reading a file. `generate_chart()` remains
+the convenience function that combines those steps.
 
 Green indicates online and red indicates offline. When lifecycle events are
 present, blue triangle/vertical markers show monitor starts and purple square/
@@ -204,6 +222,12 @@ stops end the observed interval; unmonitored time is not inferred to be offline.
 `--period` accepts `day`, `week`, `month`, `3-months`, or `year`, aligned to the
 calendar period containing the latest log date; `--period` cannot be combined
 with `--from`/`--to`.
+
+For Python callers and tests, `read_calendar_events()` returns validated,
+UTC-sorted event data, and `render_calendar_chart()` renders an in-memory event
+sequence without a CSV input file. Pass a fixed timezone-aware `generated_at`
+timestamp for reproducible output. `generate_calendar_chart()` remains the
+convenience function that reads a CSV and renders the calendar.
 
 ## Development
 

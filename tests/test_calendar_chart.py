@@ -4,7 +4,7 @@ from xml.etree import ElementTree as ET
 
 from typer.testing import CliRunner
 
-from linkwatch import app
+from linkwatch.cli import app
 
 runner = CliRunner()
 

@@ -13,7 +13,8 @@ from zoneinfo import ZoneInfo
 WEEKDAYS = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
 
 
-def _read_events(log_path: Path) -> list[tuple[datetime, str]]:
+def read_calendar_events(log_path: Path) -> list[tuple[datetime, str]]:
+    """Read, validate, and UTC-sort events from a Link Watch CSV log."""
     if not log_path.is_file():
         raise FileNotFoundError(f"log file not found: {log_path}")
     events: list[tuple[datetime, str]] = []
@@ -174,16 +175,30 @@ def _local_timezone() -> tzinfo:
         return datetime.now().astimezone().tzinfo or timezone.utc
 
 
-def generate_calendar_chart(
-    log_path: Path,
+def render_calendar_chart(
+    events: list[tuple[datetime, str]],
     output_path: Path,
     *,
     start_date: date | None = None,
     end_date: date | None = None,
     period: str | None = None,
     timezone_name: str = "local",
+    generated_at: datetime | None = None,
 ) -> None:
-    """Render daily outage intervals and start counts as a week-grid SVG."""
+    """Render supplied event data as a week-grid SVG calendar.
+
+    Pass a fixed, timezone-aware ``generated_at`` to make repeated renders of
+    the same events and options reproducible.
+    """
+    accepted = {"connected", "disconnected", "monitor_started", "monitor_stopped"}
+    normalized_events: list[tuple[datetime, str]] = []
+    for timestamp, event in events:
+        if timestamp.tzinfo is None or timestamp.utcoffset() is None or event not in accepted:
+            raise ValueError(f"invalid calendar event: {(timestamp, event)}")
+        normalized_events.append((timestamp.astimezone(timezone.utc), event))
+    if not normalized_events:
+        raise ValueError("no connectivity events to render")
+    events = sorted(normalized_events)
     if timezone_name.lower() == "local":
         zone = _local_timezone()
         zone_label = "Local time"
@@ -197,9 +212,11 @@ def generate_calendar_chart(
             raise ValueError(f"unknown timezone: {timezone_name}") from error
         zone_label = timezone_name
 
-    generated_at = datetime.now(zone)
+    generated_at = datetime.now(zone) if generated_at is None else generated_at
+    if generated_at.tzinfo is None or generated_at.utcoffset() is None:
+        raise ValueError("generated_at must be timezone-aware")
+    generated_at = generated_at.astimezone(zone)
     generated_utc = generated_at.astimezone(timezone.utc)
-    events = _read_events(log_path)
     start_date, end_date = _period_range(events, zone, start_date, end_date, period, generated_at)
     range_start = datetime.combine(start_date, time.min, tzinfo=zone).astimezone(timezone.utc)
     range_end = datetime.combine(end_date + timedelta(days=1), time.min, tzinfo=zone).astimezone(timezone.utc)
@@ -389,3 +406,25 @@ def generate_calendar_chart(
 '''
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(svg, encoding="utf-8")
+
+
+def generate_calendar_chart(
+    log_path: Path,
+    output_path: Path,
+    *,
+    start_date: date | None = None,
+    end_date: date | None = None,
+    period: str | None = None,
+    timezone_name: str = "local",
+    generated_at: datetime | None = None,
+) -> None:
+    """Read a Link Watch CSV log and render its outage calendar."""
+    render_calendar_chart(
+        read_calendar_events(log_path),
+        output_path,
+        start_date=start_date,
+        end_date=end_date,
+        period=period,
+        timezone_name=timezone_name,
+        generated_at=generated_at,
+    )
